@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>QuizForge Local</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f7f7f7;
+    margin: 0;
+    padding: 24px;
+    }
+    .container {
+    max-width: 900px;
+    margin: auto;
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    h1 { margin-top: 0; }
+    button {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    background: #2563eb;
+    color: white;
+    font-size: 14px;
+    }
+    button.secondary { background: #111827; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .row { margin: 12px 0; }
+          
+    /* Quiz Card Styles */
+    .quiz-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .quiz-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    }
+    .quiz-question {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    }
+    .quiz-option {
+    display: block;
+    background: #f3f4f6;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    }
+    .quiz-option:hover {
+    background: #e0e7ff;
+    }
+    .quiz-option input {
+    margin-right: 8px;
+    }
+    .result {
+    margin-top: 8px;
+    font-weight: bold;
+    }
+    .explanation {
+    font-weight: normal;
+    margin-top: 4px;
+    color: #374151;
+    }
+    select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    }
+    </style>
+</head>
+<body>
+  <div class="container">
+    <h1>QuizForge Local</h1>
+    <p>Upload a PDF and generate a quiz using a <b>local WebLLM</b> (no server, no API key).</p>
+    <span id="status"> </span>
+    <div class="row">
+      <button id="initBtn" class="secondary">Init Local LLM</button>
+        <select id="modelSelect">         
+          <option value="gemma-2-2b-it-q4f16_1-MLC">Gemma-2B</option>
+          <option value="Mistral-7B-Instruct-v0.3-q4f32_1-MLC">Mistral-7B-Instruct</option>        
+        </select>     
+      </div>
+
+    <div class="row">
+      <input type="file" id="pdfInput" accept="application/pdf" />
+    </div>
+
+    <div class="row">
+      <button id="quizBtn" disabled>Generate Quiz</button>
+    </div>
+
+    <div class="row">
+      <div id="quiz"></div>
+    </div>
+  </div>
+
+  <!-- pdf.js (stable legacy build) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+
+  <!-- WebLLM (ESM) -->
+  <script type="module">
+    import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+
+    let engine = null;
+    let pdfText = "";
+
+    const initBtn = document.getElementById("initBtn");
+    const quizBtn = document.getElementById("quizBtn");
+    const pdfInput = document.getElementById("pdfInput");    
+    const status = document.getElementById("status");
+    const quizDiv = document.getElementById("quiz")
+
+    initBtn.onclick = async () => {
+      const selectedModel = modelSelect.value;
+      status.textContent = ` Loading model (${selectedModel})... (first time may take a while)`;
+      engine = await CreateMLCEngine(selectedModel,
+        {
+          initProgressCallback: (info) => {
+            status.textContent = " " + info.text;
+          },
+        }
+      );
+      status.textContent = " Model ready";
+      quizBtn.disabled = false;
+    };
+
+    pdfInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+      let text = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map((it) => it.str).join(" ") + "\n";
+      }
+
+      pdfText = text.slice(0, 3500);
+      status.textContent = "PDF loaded (text extracted).";
+    };
+
+    quizBtn.onclick = async () => {
+      if (!engine || !pdfText) return;
+
+      status.textContent = "Generating quiz...";
+
+      const prompt = `Generate 5 multiple-choice questions based
+       on the TEXT (4 options each).
+Clearly mark the correct answer and provide the explanation. 
+Strictly follow the RESPONSE FORMAT and do not add any other characters.
+
+TEXT:
+${pdfText}
+
+RESPONSE FORMAT:
+[Q{question_id}] {Question}
+[A] {Option A}
+[B] {Option B}
+[C] {Option C}
+[D] {Option D}
+[ANS] {Correct Answer ID(A, B, C or D))}
+[EP] {Explanation for choosing the Correct Answer}
+`;
+
+      const res = await engine.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        stream: true
+      });
+      
+      let content = "";
+      let questionCount = 0;
+
+      for await (const chunk of res) {
+        content += chunk.choices[0].delta?.content || "";
+        const newQuestions = content.split(/\n(?=\[Q)/g).length;
+        if (newQuestions > questionCount) {
+        questionCount = newQuestions;
+        status.textContent = `Generating quiz: ${questionCount}/5 questions...`;
+        }
+      }
+      status.textContent = "Quiz generation completed.";
+      console.log(content);
+      renderQuiz(content);      
+    };
+
+function parseQuiz(text) {
+  const blocks = text.split(/\n(?=\[Q)/g);
+
+  return blocks.map((b) => {
+    return {
+      question: b.match(/\[Q\d+\]\s*(.*)/)?.[1] ?? "",
+      options: {
+        A: b.match(/\[A\]\s*(.*)/)?.[1],
+        B: b.match(/\[B\]\s*(.*)/)?.[1],
+        C: b.match(/\[C\]\s*(.*)/)?.[1],
+        D: b.match(/\[D\]\s*(.*)/)?.[1],
+      },
+      answer: b.match(/\[ANS\]\s*(.*)/)?.[1]?.trim(),
+      explanation: b.match(/\[EP\]\s*(.*)/)?.[1],
+    };
+  });
+}
+
+function renderQuiz(text) {
+  quizDiv.innerHTML = "";
+  const quiz = parseQuiz(text);
+
+
+  quiz.forEach((q, idx) => {
+  const card = document.createElement("div");
+  card.className = "quiz-card";
+
+
+  const title = document.createElement("div");
+  title.className = "quiz-question";
+  title.textContent = `Q${idx + 1}. ${q.question}`;
+  card.appendChild(title);
+
+
+  Object.entries(q.options).forEach(([key, val]) => {
+  if (!val) return;
+  const label = document.createElement("label");
+  label.className = "quiz-option";
+
+
+  const radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = `q-${idx}`;
+  radio.value = key;
+
+
+  radio.onchange = () => {
+  card.querySelectorAll(".result").forEach(e => e.remove());
+
+
+  const result = document.createElement("div");
+  result.className = "result";
+  result.style.marginTop = "8px";
+  result.style.fontWeight = "bold";
+
+
+  if (key.trim().toUpperCase() === q.answer.trim().toUpperCase()) {
+  result.textContent = "✅ Correct";
+  result.style.color = "green";
+  } else {
+  result.textContent = `❌ Wrong. Correct answer: ${q.answer}`;
+  result.style.color = "red";
+  }
+
+
+  if (q.explanation) {
+  const ep = document.createElement("div");
+  ep.className = "explanation";
+  ep.textContent = "Explanation: " + q.explanation;
+  result.appendChild(ep);
+  }
+
+
+  card.appendChild(result);
+  };
+
+
+  label.appendChild(radio);
+  label.append(`${val}`);
+  card.appendChild(label);
+  });
+
+
+  quizDiv.appendChild(card);
+  });
+}
+  </script>
+</body>
+</html>
