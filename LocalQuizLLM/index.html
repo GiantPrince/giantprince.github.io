@@ -85,8 +85,14 @@
 </head>
 <body>
   <div class="container">
-    <h1>QuizForge Local</h1>
-    <p>Upload a PDF and generate a quiz using a <b>local WebLLM</b> (no server, no API key).</p>
+    <h1>Local Quiz LLM</h1>
+    <p>Instructions: Upload a PDF and generate a quiz using a <b>local WebLLM</b> (no server, no API key).</p>
+    <p>1. First select a model and click the <b>Init Local LLM</b> button. </p>
+    <p>2. Wait until the init process finished. </p>
+    <p>3. Upload a pdf. </p>
+    <p>4. Click the <b>Generate Quiz</b> button. </p>
+    <p>5. Wait until the quiz generation is finished. </p>
+    <p>6. Enjoy your quiz time! </p>
     <span id="status"> </span>
     <div class="row">
       <button id="initBtn" class="secondary">Init Local LLM</button>
@@ -134,6 +140,7 @@
       status.textContent = ` Loading model (${selectedModel})... (first time may take a while)`;
       engine = await CreateMLCEngine(selectedModel,
         {
+          useCache: false,
           initProgressCallback: (info) => {
             status.textContent = " " + info.text;
           },
