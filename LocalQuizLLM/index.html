@@ -214,19 +214,20 @@ RESPONSE FORMAT:
 
 function parseQuiz(text) {
   const blocks = text.split(/\n(?=\[Q)/g);
-
   return blocks.map((b) => {
-    return {
-      question: b.match(/\[Q\d+\]\s*(.*)/)?.[1] ?? "",
-      options: {
-        A: b.match(/\[A\]\s*(.*)/)?.[1],
-        B: b.match(/\[B\]\s*(.*)/)?.[1],
-        C: b.match(/\[C\]\s*(.*)/)?.[1],
-        D: b.match(/\[D\]\s*(.*)/)?.[1],
-      },
-      answer: b.match(/\[ANS\]\s*(.*)/)?.[1]?.trim(),
-      explanation: b.match(/\[EP\]\s*(.*)/)?.[1],
-    };
+  let ansMatch = b.match(/\[ANS\]\s*(.*)/);
+  let answer = ansMatch ? ansMatch[1].trim().charAt(0).toUpperCase() : '';
+  return {
+  question: b.match(/\[Q\d+\]\s*(.*)/)?.[1] ?? "",
+  options: {
+  A: b.match(/\[A\]\s*(.*)/)?.[1],
+  B: b.match(/\[B\]\s*(.*)/)?.[1],
+  C: b.match(/\[C\]\s*(.*)/)?.[1],
+  D: b.match(/\[D\]\s*(.*)/)?.[1],
+  },
+  answer: answer,
+  explanation: b.match(/\[EP\]\s*(.*)/)?.[1],
+  };
   });
 }
 
